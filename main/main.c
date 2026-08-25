@@ -58,6 +58,19 @@ static inline int16_t clamp_s16(int32_t val) {
   return (int16_t)val;
 }
 
+static void rotate_left(int16_t *arr, int len, int shift_len) {
+  if (shift_len <= 0 || shift_len >= len) return;
+  for (int i = 0, j = shift_len - 1; i < j; i++, j--) {
+    int16_t tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp;
+  }
+  for (int i = shift_len, j = len - 1; i < j; i++, j--) {
+    int16_t tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp;
+  }
+  for (int i = 0, j = len - 1; i < j; i++, j--) {
+    int16_t tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp;
+  }
+}
+
 void process_iir_q15_cascade(const int16_t *src, int16_t *dst, int len,
                              iir_biquad_q15_stage_t *stages, int num_stages) {
   for (int i = 0; i < len; i++) {
@@ -94,29 +107,7 @@ void process_iir_q15_cascade(const int16_t *src, int16_t *dst, int len,
   }
 }
 
-void process_fir_q15_direct(const int16_t *src, int16_t *dst, int len,
-                            const int16_t *coeffs, int num_taps,
-                            int16_t *delay) {
-  // 1. Copia o novo bloco de entrada para a frente do histórico de atraso
-  memcpy(&delay[num_taps - 1], src, len * sizeof(int16_t));
-
-  // 2. Convolução direta (mesma ordem matemática do dsps_fir_f32)
-  for (int i = 0; i < len; i++) {
-    int64_t acc = 0;
-    const int16_t *s = &delay[i];
-
-    for (int k = 0; k < num_taps; k++) {
-      acc += (int64_t)coeffs[k] * (int64_t)s[num_taps - 1 - k];
-    }
-
-    // Arredondamento simétrico + shift Q15
-    int32_t out32 = (int32_t)((acc + 16384) >> 15);
-    dst[i] = clamp_s16(out32);
-  }
-
-  // 3. Move o histórico de volta para o início do array
-  memmove(delay, &delay[len], (num_taps - 1) * sizeof(int16_t));
-}
+// (process_fir_q15_circular removed in favor of dsps_fird_s16_ansi)
 
 static esp_err_t write_reg(uint8_t addr, uint8_t reg, uint8_t val) {
   uint8_t d[2] = {reg, val};
@@ -313,15 +304,18 @@ void run_fir_diagnostics(void) {
     fir_coeffs_q15_reversed[i] = fir_coeffs_q15[FIR_Q15_TAP_COUNT - 1 - i];
   }
 
-  // Inicializa o ESP-DSP passando o array REVERSO
-  dsps_fird_init_s16(&fir_inst_q15, fir_coeffs_q15_reversed, fir_delay_q15,
+  // Inicializa o ESP-DSP passando o array DIRECT
+  dsps_fird_init_s16(&fir_inst_q15, fir_coeffs_q15, fir_delay_q15,
                      FIR_Q15_TAP_COUNT, 1, 0, 0);
 
   // Executa múltiplos blocos para passar o transiente dos 511 taps
   for (int b = 0; b < 4; b++) {
     dsps_fir_f32(&fir_inst_f32, in_f32, out_f32, DIAG_LEN);
-    process_fir_q15_direct(in_q15, out_q15, DIAG_LEN, fir_coeffs_q15,
-                           FIR_Q15_TAP_COUNT, fir_delay_q15);
+    fir_inst_q15.pos = 0;
+    fir_inst_q15.d_pos = 0;
+    dsps_fird_s16(&fir_inst_q15, in_q15, out_q15, DIAG_LEN);
+    int final_pos = DIAG_LEN % fir_inst_q15.coeffs_len;
+    rotate_left(fir_delay_q15, fir_inst_q15.coeffs_len, final_pos);
   }
 
   ESP_LOGI(TAG, "Amostras Estabilizadas (1 kHz):");
@@ -351,8 +345,11 @@ void run_fir_diagnostics(void) {
 
   for (int b = 0; b < 4; b++) {
     dsps_fir_f32(&fir_inst_f32, in_f32, out_f32, DIAG_LEN);
-    process_fir_q15_direct(in_q15, out_q15, DIAG_LEN, fir_coeffs_q15,
-                           FIR_Q15_TAP_COUNT, fir_delay_q15);
+    fir_inst_q15.pos = 0;
+    fir_inst_q15.d_pos = 0;
+    dsps_fird_s16(&fir_inst_q15, in_q15, out_q15, DIAG_LEN);
+    int final_pos = DIAG_LEN % fir_inst_q15.coeffs_len;
+    rotate_left(fir_delay_q15, fir_inst_q15.coeffs_len, final_pos);
   }
 
   ESP_LOGI(TAG, "Amostras Estabilizadas (5 kHz):");
@@ -381,8 +378,11 @@ void run_fir_diagnostics(void) {
 
   for (int b = 0; b < 4; b++) {
     dsps_fir_f32(&fir_inst_f32, in_f32, out_f32, DIAG_LEN);
-    process_fir_q15_direct(in_q15, out_q15, DIAG_LEN, fir_coeffs_q15,
-                           FIR_Q15_TAP_COUNT, fir_delay_q15);
+    fir_inst_q15.pos = 0;
+    fir_inst_q15.d_pos = 0;
+    dsps_fird_s16(&fir_inst_q15, in_q15, out_q15, DIAG_LEN);
+    int final_pos = DIAG_LEN % fir_inst_q15.coeffs_len;
+    rotate_left(fir_delay_q15, fir_inst_q15.coeffs_len, final_pos);
   }
 
   int16_t dc_f32_conv = (int16_t)(out_f32[DIAG_LEN - 1] * 32768.0f);
@@ -563,7 +563,7 @@ void audio_dsp_task(void *pvParameters) {
   // --- FIR Fixed-Point Q15 ---
   esp_err_t ret_q15 =
       dsps_fird_init_s16(&fir_inst_q15, fir_coeffs_q15, fir_delay_q15,
-                         FIR_Q15_TAP_COUNT, 1, -1, 0);
+                         FIR_Q15_TAP_COUNT, 1, 0, 0);
 
   // Coeffs sum (diagnostics):
   float sum = 0;
@@ -656,8 +656,11 @@ void audio_dsp_task(void *pvParameters) {
         ESP_LOGI(TAG, "Q15 Streaming -> Peak IN: %d | Peak OUT: %d", max_in,
                  max_out);
       }*/
-      process_fir_q15_direct(q15_in, q15_out, samples_count, fir_coeffs_q15,
-                             FIR_Q15_TAP_COUNT, fir_delay_q15);
+      fir_inst_q15.pos = 0;
+      fir_inst_q15.d_pos = 0;
+      dsps_fird_s16(&fir_inst_q15, q15_in, q15_out, samples_count);
+      int final_pos = samples_count % fir_inst_q15.coeffs_len;
+      rotate_left(fir_delay_q15, fir_inst_q15.coeffs_len, final_pos);
       break;
 
     case 2: // IIR Float (Biquad)
