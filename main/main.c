@@ -135,17 +135,21 @@ static void es8388_init_espressif_standard(uint8_t addr) {
   write_reg(addr, 0x02, 0xF3); // CHIPPOWER: power down DEM/STM durante config
   write_reg(addr, 0x2B, 0x80); // DACCONTROL21: mesmo LRCK para ADC/DAC
   write_reg(addr, 0x00, 0x14); // CONTROL1
-  write_reg(addr, 0x01, 0x40); // CONTROL2: power up analog/Ibias
+  write_reg(addr, 0x01, 0x50); // CONTROL2: power up analog/Ibias
 
   // 3. ADC (Line-In)
+  write_reg(addr, 0x12, 0x00); // ALC SEL: ALC desativado em ambos os canais
+  write_reg(addr, 0x13, 0x00); // ALC Control 2: Ganho máximo do ALC zerado
+  write_reg(addr, 0x14, 0x00); // ALC Control 3: Ganho mínimo do ALC zerado
   write_reg(addr, 0x03, 0x00); // Power Up ADC
-  write_reg(addr, 0x0A, 0x00); // LIN1/RIN1 input
+  write_reg(addr, 0x0A, 0x55); // LIN1/RIN1 input
   write_reg(addr, 0x0B, 0x00); // Single-ended input mode (0x00) for standard
                                // Line-In (0xF0 was differential MIC mode)
   write_reg(
       addr, 0x09,
       ES8388_ADC_PGA_GAIN);    // 0dB input gain to prevent Line-In saturation
   write_reg(addr, 0x0C, 0x0C); // 16-bit I2S
+  write_reg(addr, 0x07, 0x00);
   write_reg(addr, 0x0D, 0x02); // Ratio 256 (MCLK = 256 * Fs = 12.288 MHz)
   write_reg(addr, 0x10, 0x00); // Vol ADC L 0dB
   write_reg(addr, 0x11, 0x00); // Vol ADC R 0dB
@@ -197,6 +201,8 @@ static void es8388_init_espressif_standard(uint8_t addr) {
 static void i2s_driver_init(void) {
   i2s_chan_config_t chan_cfg =
       I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
+  chan_cfg.dma_desc_num = 8;
+  chan_cfg.dma_frame_num = 512;
   i2s_new_channel(&chan_cfg, &tx_handle, &rx_handle);
 
   i2s_std_config_t std_cfg = {
