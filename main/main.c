@@ -74,13 +74,12 @@ static void rotate_left(int16_t *arr, int len, int shift_len) {
 void process_iir_q15_cascade(const int16_t *src, int16_t *dst, int len,
                              iir_biquad_q15_stage_t *stages, int num_stages) {
   for (int i = 0; i < len; i++) {
+    // Atenua a entrada levemente se necessário para evitar inter-stage clipping
     int32_t sample = src[i];
 
     for (int s = 0; s < num_stages; s++) {
       iir_biquad_q15_stage_t *st = &stages[s];
 
-      // Difference Equation: y[n] = b0*x[n] + b1*x[n-1] + b2*x[n-2] - a1*y[n-1]
-      // - a2*y[n-2]
       int64_t acc = 0;
       acc += (int64_t)st->b0 * sample;
       acc += (int64_t)st->b1 * st->x1;
@@ -88,13 +87,12 @@ void process_iir_q15_cascade(const int16_t *src, int16_t *dst, int len,
       acc -= (int64_t)st->a1 * st->y1;
       acc -= (int64_t)st->a2 * st->y2;
 
-      // Shift back by 14 bits for Q14 format
+      // Adiciona arredondamento (round half-up) antes do deslocamento de 14 bits
+      acc += (1ULL << 13);
       int32_t out32 = (int32_t)(acc >> 14);
 
-      // Saturate to 16-bit PCM output limits
       int16_t out16 = clamp_s16(out32);
 
-      // Update state registers
       st->x2 = st->x1;
       st->x1 = (int16_t)sample;
       st->y2 = st->y1;
@@ -205,7 +203,7 @@ static void i2s_driver_init(void) {
       .clk_cfg =
           {
               .sample_rate_hz = SAMPLE_RATE,
-              .clk_src = I2S_CLK_SRC_DEFAULT,
+              .clk_src = I2S_CLK_SRC_APLL,
               .mclk_multiple = I2S_MCLK_MULTIPLE_256,
           },
       .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT,
@@ -546,10 +544,6 @@ void audio_dsp_task(void *pvParameters) {
   }
   ESP_LOGI(TAG, "IIR Q15 Custom Cascade initialized!");
 
-  for (int i = 0; i < FIR_F32_TAP_COUNT; i++) {
-    fir_coeffs_f32[i] = (float)fir_coeffs_q15[i] / 32768.0f;
-  }
-
   // --- FIR Float32 ---
   esp_err_t ret = dsps_fir_init_f32(&fir_inst_f32, fir_coeffs_f32,
                                     fir_delay_f32, FIR_F32_TAP_COUNT);
@@ -616,7 +610,7 @@ void audio_dsp_task(void *pvParameters) {
         peak_right = abs(right_sample);
       }
 
-      q15_in[i] = (int16_t)(((int32_t)left_sample + (int32_t)right_sample) / 2);
+      q15_in[i] = left_sample;//(int16_t)(((int32_t)left_sample + (int32_t)right_sample) / 2);
       float_in[i] = ((float)q15_in[i] / 32768.0f) * INPUT_HEADROOM;
     }
 
@@ -664,7 +658,8 @@ void audio_dsp_task(void *pvParameters) {
       break;
 
     case 2: // IIR Float (Biquad)
-
+      dsps_biquad_f32(float_in, float_out, samples_count, iir_coeffs_f32, iir_delay_f32);
+      /*
       // 1. Copy initial input to float_out
       memcpy(float_out, float_in, samples_count * sizeof(float));
 
@@ -708,23 +703,12 @@ void audio_dsp_task(void *pvParameters) {
             max_iir = abs_val;
         }
         ESP_LOGI(TAG, "Pico de saida IIR (float_out): %f", max_iir);
-      }
+      }*/
       break;
 
     case 3: // IIR Q15 Cascade
       process_iir_q15_cascade(q15_in, q15_out, samples_count, iir_stages_q15,
                               IIR_STAGES);
-
-      static int contador_iir_q15 = 0;
-      if (++contador_iir_q15 % 100 == 0) {
-        int16_t max_q15 = 0;
-        for (int i = 0; i < samples_count; i++) {
-          int16_t abs_val = abs(q15_out[i]);
-          if (abs_val > max_q15)
-            max_q15 = abs_val;
-        }
-        ESP_LOGI(TAG, "Pico de saída IIR Q15 Custom: %d / 32767", max_q15);
-      }
       break;
     case 4: // Passthrough (copia entrada direto para a saída em q15)
       memcpy(q15_out, q15_in, samples_count * sizeof(int16_t));
@@ -791,7 +775,7 @@ void app_main(void) {
   // 4. Configura ES8388
   es8388_init_espressif_standard(0x10);
 
-  run_fir_diagnostics();
+  //run_fir_diagnostics();
 
   // 5. Inicia Task
   // xTaskCreatePinnedToCore(passthrough_task, "passthrough_task", 4096, NULL,

@@ -2,9 +2,12 @@ import numpy as np
 from scipy import signal
 
 # Notch
-freq = 1072.1
+# freq = 1072.1
+freq = 985
 rho = 0.9
 alpha = 20
+
+samp_freq = 48000
 
 
 # --- Input Coefficients ---
@@ -70,8 +73,8 @@ fir_coeffs = np.array([
 #    56.02587520762714, -42.68878657315028, 20.38603871718785, -5.5787136354328055, 0.6697945576407761
 #]
 
-iir_b_coeffs = [1+alpha, -2*np.cos(2*np.pi*freq/48000)*(1+alpha), 1+alpha]
-iir_a_coeffs = [1+alpha, -2*(alpha+rho)*np.cos(2*np.pi*freq/48000), (rho*rho+alpha)]
+iir_b_coeffs = [1+alpha, -2*np.cos(2*np.pi*freq/samp_freq)*(1+alpha), 1+alpha]
+iir_a_coeffs = [1+alpha, -2*(alpha+rho)*np.cos(2*np.pi*freq/samp_freq), (rho*rho+alpha)]
 
 # --- Conversions ---
 # 1. FIR Q15 Quantization

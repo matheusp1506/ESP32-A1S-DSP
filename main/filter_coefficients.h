@@ -101,7 +101,7 @@ __attribute__((aligned(16))) static int16_t
 
 // Estrutura [b0, b1, b2, a1, a2] pronta para o ESP-DSP dsps_biquad_f32
 static float iir_coeffs_f32[5 * IIR_STAGES] = {
-    1.000000000f, -1.980337671f, 1.000000000f, -1.970907491f, 0.990952381f
+    1.000000000f, -1.983398475f, 1.000000000f, -1.973953721f, 0.990952381f
 };
 
 static float iir_delay_f32[2 * IIR_STAGES] = {0};
@@ -125,7 +125,7 @@ static iir_biquad_q15_stage_t iir_stages_q15[IIR_STAGES];
 // Coeficientes Q14 por estágio [b0, b1, b2, a1, a2]
 static const int16_t iir_coeffs_q15_raw[IIR_STAGES][5] = {
     //  b0,     b1,     b2,     a1,     a2
-    { 16384, -32446,  16384, -32291,  16236}
+    { 16384, -32496,  16384, -32341,  16236}
 };
 
 #endif // FILTER_COEFFICIENTS_H
