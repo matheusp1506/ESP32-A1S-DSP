@@ -32,7 +32,7 @@ static const char *TAG = "AUDIO";
 #define I2S_DI_IO 35
 
 #define ES8388_ADC_PGA_GAIN                                                    \
-  0x00 // 0 dB gain (0xC0 was +36dB for Mic, causing severe clipping with PC
+  0xC0 // 0 dB gain (0xC0 was +36dB for Mic, causing severe clipping with PC
        // line signals)
 
 // Onboard Buttons for ESP32-A1S Audio Kit v2.2
@@ -142,7 +142,7 @@ static void es8388_init_espressif_standard(uint8_t addr) {
   write_reg(addr, 0x13, 0x00); // ALC Control 2: Ganho máximo do ALC zerado
   write_reg(addr, 0x14, 0x00); // ALC Control 3: Ganho mínimo do ALC zerado
   write_reg(addr, 0x03, 0x00); // Power Up ADC
-  write_reg(addr, 0x0A, 0x55); // LIN1/RIN1 input
+  write_reg(addr, 0x0A, 0x50); // LIN1/RIN1 input
   write_reg(addr, 0x0B, 0x00); // Single-ended input mode (0x00) for standard
                                // Line-In (0xF0 was differential MIC mode)
   write_reg(
@@ -156,7 +156,7 @@ static void es8388_init_espressif_standard(uint8_t addr) {
 
   // 4. Power up total
   write_reg(addr, 0x01, 0x50); // CONTROL2
-  write_reg(addr, 0x02, 0x00); // CHIPPOWER: power up total
+  write_reg(addr, 0x02, 0x01); // CHIPPOWER: power up total
   write_reg(addr, 0x08, 0x00); // Slave mode
 
   // 5. DAC

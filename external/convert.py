@@ -78,7 +78,9 @@ iir_a_coeffs = [1+alpha, -2*(alpha+rho)*np.cos(2*np.pi*freq/samp_freq), (rho*rho
 
 # --- Conversions ---
 # 1. FIR Q15 Quantization
-fir_q15 = np.clip(np.round(fir_coeffs * 32768.0), -32768, 32767).astype(int)
+max_val = np.max(np.abs(fir_coeffs))  # ~1.03845
+scale_factor = 32767.0 / max_val
+fir_q15 = np.clip(np.round(fir_coeffs * scale_factor), -32768, 32767).astype(int)
 
 # 2. IIR SOS Decomposition (Shape: [N_STAGES, 6] -> [b0, b1, b2, a0, a1, a2])
 sos = signal.tf2sos(iir_b_coeffs, iir_a_coeffs)
